@@ -71,3 +71,10 @@ test("yields events with decoded payload", async () => {
   for await (const e of iterSSEEvents(stream)) values.push(e.payload.value);
   assert.deepEqual(values, ["ON", "OFF"]);
 });
+
+test("reads the history like js-openhab-rest-client", async () => {
+  const { Persistence } = await import("../openhab-proxy.mjs");
+  const result = await new Persistence(new OpenHABClient(url))
+    .getItemPersistenceData("Fehlt", "rrd4j", { startTime: new Date() });
+  assert.deepEqual(result, { error: "Unknown Item or persistence service." });
+});

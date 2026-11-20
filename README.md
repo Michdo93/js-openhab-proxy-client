@@ -42,6 +42,8 @@ for await (const event of iterSSEEvents(stream)) {
 | `ItemEvents` | `ItemStateChangedEvent(name = "*")` | state changes of allowed items |
 | | `GroupItemStateChangedEvent(group, member)` | state changes of groups |
 | | all other event methods | `{ error: "Not available through the proxy." }` |
+| `Persistence` | `getItemPersistenceData(name, service, { startTime, endTime })` | `{ name, datapoints, data: [{ time, state }] }`; the proxy picks the service and limits the period |
+| | `storeItemData`, `deleteItemData` | `{ error: "Not available through the proxy." }` |
 | helpers | `iterSSELines`, `iterSSEEvents`, `parseSSEData` | identical to js-openhab-rest-client |
 
 Return values follow js-openhab-rest-client: JSON as objects, states as text, `{ message: "OK" }` for commands, and `{ error: "…" }` instead of exceptions:

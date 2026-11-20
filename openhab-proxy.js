@@ -5,8 +5,9 @@
  * methods, parameters and return values as js-openhab-rest-client – for the
  * part of the REST API that the proxy offers:
  *
- *   Items:      getItems, getItem, getItemState, sendCommand
- *   ItemEvents: ItemStateChangedEvent, GroupItemStateChangedEvent
+ *   Items:       getItems, getItem, getItemState, sendCommand
+ *   ItemEvents:  ItemStateChangedEvent, GroupItemStateChangedEvent
+ *   Persistence: getItemPersistenceData
  *   helpers:    iterSSELines, iterSSEEvents, parseSSEData
  *
  * A dashboard switches between direct access and the proxy by loading
@@ -19,7 +20,7 @@
  * The proxy decides what is allowed. This file never holds credentials.
  *
  * @license MIT
- * @version 0.2.0
+ * @version 0.3.0
  */
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -86,7 +87,8 @@ class OpenHABClient {
   async _fetch(url, options = {}, timeout = this.timeout) {
     const controller = new AbortController();
     const timer = timeout
-      ? setTimeout(() => controller.abort(new Error(`Timeout after ${timeout} s`)), timeout * 1000)
+      ? setTimeout(() => controller.abort(new Error(`Timeout after ${timeout} s`)),
+        timeout * 1000)
       : null;
     try {
       return await fetch(url, { ...options, signal: controller.signal });
@@ -137,7 +139,8 @@ class OpenHABClient {
   async executeSSE(path, params = null) {
     const controller = new AbortController();
     const timer = this.timeout
-      ? setTimeout(() => controller.abort(new Error("Timeout while connecting")), this.timeout * 1000)
+      ? setTimeout(() => controller.abort(new Error("Timeout while connecting")),
+        this.timeout * 1000)
       : null;
     let response;
     try {
@@ -360,7 +363,43 @@ function _onlyTopics(stream, keep) {
   return filtered;
 }
 
+class Persistence {
+  constructor(client) {
+    this.client = client;
+  }
+
+  /**
+   * Values of an item from the persistence: { name, datapoints, data }.
+   * serviceID is chosen by the proxy (PERSISTENCE_SERVICE) and ignored here;
+   * the other options of js-openhab-rest-client are accepted and ignored.
+   */
+  async getItemPersistenceData(itemName, serviceID = null,
+    { startTime = null, endTime = null } = {}) {
+    const params = new URLSearchParams();
+    if (startTime) params.set("start", new Date(startTime).toISOString());
+    if (endTime) params.set("end", new Date(endTime).toISOString());
+    const query = params.size ? `?${params}` : "";
+    try {
+      return await this.client.get(
+        `/items/${encodeURIComponent(itemName)}/history${query}`,
+        { Accept: "application/json" });
+    } catch (err) {
+      return _asResult(err, { 404: "Unknown Item or persistence service." });
+    }
+  }
+
+  /** Writing to the persistence is not offered by the proxy. */
+  async storeItemData() {
+    return { ...NOT_AVAILABLE };
+  }
+
+  async deleteItemData() {
+    return { ...NOT_AVAILABLE };
+  }
+}
+
 class AsyncOpenHABClient extends OpenHABClient {}
+class AsyncPersistence extends Persistence {}
 class AsyncItems extends Items {}
 class AsyncItemEvents extends ItemEvents {}
 
@@ -370,7 +409,7 @@ class AsyncItemEvents extends ItemEvents {}
 
 const openHAB = {
   OpenHABClient, OpenHABProxyClient, AsyncOpenHABClient, OpenHABHTTPError,
-  Items, AsyncItems, ItemEvents, AsyncItemEvents,
+  Items, AsyncItems, ItemEvents, AsyncItemEvents, Persistence, AsyncPersistence,
   iterSSELines, iterSSEEvents, parseSSEData, aiterSSELines, aiterSSEEvents
 };
 

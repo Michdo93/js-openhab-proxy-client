@@ -64,6 +64,17 @@ export class ItemEvents {
 }
 export { ItemEvents as AsyncItemEvents };
 
+export class Persistence {
+  constructor(client: OpenHABClient);
+  getItemPersistenceData(itemName: string, serviceID?: string | null,
+    options?: { startTime?: string | Date; endTime?: string | Date }):
+    Promise<Result<{ name: string; datapoints: number;
+      data: { time: number; state: string }[] }>>;
+  storeItemData(...args: unknown[]): Promise<{ error: string }>;
+  deleteItemData(...args: unknown[]): Promise<{ error: string }>;
+}
+export { Persistence as AsyncPersistence };
+
 export function iterSSELines(response: Response): AsyncGenerator<string>;
 export function iterSSEEvents(response: Response, includeAlive?: boolean):
   AsyncGenerator<OpenHABEvent>;
@@ -74,5 +85,6 @@ declare const openHAB: {
   OpenHABClient: typeof OpenHABClient; Items: typeof Items; ItemEvents: typeof ItemEvents;
   iterSSEEvents: typeof iterSSEEvents; iterSSELines: typeof iterSSELines;
   parseSSEData: typeof parseSSEData; OpenHABHTTPError: typeof OpenHABHTTPError;
+  Persistence: typeof Persistence;
 };
 export default openHAB;

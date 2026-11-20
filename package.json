@@ -1,6 +1,6 @@
 {
   "name": "js-openhab-proxy-client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Browser client for cloudflare-openhab-rest-proxy with the same API as js-openhab-rest-client.",
   "type": "module",
   "main": "./openhab-proxy.mjs",
