@@ -1,159 +1,112 @@
 # js-openhab-proxy-client
 
-A small, dependency-free JavaScript/TypeScript client for the restricted API exposed by `cloudflare-openhab-rest-proxy`.
+Browser client for [cloudflare-openhab-rest-proxy](https://github.com/Michdo93/cloudflare-openhab-rest-proxy) – one file, no dependencies, no build step.
 
-This package is intentionally independent of any dashboard or UI framework. It can be used from a browser app, a Node.js process, or another JavaScript runtime with `fetch`, `AbortController`, and Web Streams.
+It has **the same classes, methods, parameters and return values** as [js-openhab-rest-client](https://github.com/Michdo93/js-openhab-rest-client), for the part of the REST API the proxy offers. A dashboard runs against your own openHAB at home and as a public demo behind the proxy – only the script and the URL change:
 
-## Features
+```html
+<!-- at home: direct access -->
+<script src="openhab.min.js"></script>
+<script> const OPENHAB_URL = "https://openhab.local:8443"; </script>
 
-- Read the proxy's allowlisted item list.
-- Read an allowlisted item and its state.
-- Send an explicitly permitted command.
-- Subscribe to allowlisted `ItemStateChangedEvent` SSE events.
-- Reconnect after SSE interruptions, with exponential backoff.
-- Optional application state resynchronization after reconnect.
-- No runtime dependencies.
+<!-- public demo: through the proxy -->
+<script src="openhab-proxy.min.js"></script>
+<script> const OPENHAB_URL = "https://openhab-demo-proxy.example.workers.dev"; </script>
+```
+
+```js
+const { OpenHABClient, Items, ItemEvents, iterSSEEvents } = window.openHAB;
+const client = await new OpenHABClient(OPENHAB_URL).ready;
+const items = new Items(client);
+
+await items.sendCommand("Wohnzimmer_Deckenlampe_Schalter", "ON");   // { message: "OK" }
+console.log(await items.getItemState("Wohnzimmer_Deckenlampe_Schalter"));   // "ON"
+
+const stream = await new ItemEvents(client).ItemStateChangedEvent();
+for await (const event of iterSSEEvents(stream)) {
+  console.log(event.topic, event.payload.value, "was", event.payload.oldValue);
+}
+```
+
+## What is available
+
+| Class | Method | Through the proxy |
+|---|---|---|
+| `OpenHABClient` | `new OpenHABClient(url, user, password, token, timeout)` | credentials are ignored (with a warning) – the proxy holds them |
+| | `ready`, `isLoggedIn` | connection check via `/health` |
+| `Items` | `getItems({ type, tags, fields })` | allowed items; the filters work in the browser |
+| | `getItem(name)` | group members only if allowed |
+| | `getItemState(name)` | text, e.g. `"21.5 °C"` |
+| | `sendCommand(name, command)` | only commands the proxy allows |
+| | `postUpdate(…)` | `{ error: "Not available through the proxy." }` |
+| `ItemEvents` | `ItemStateChangedEvent(name = "*")` | state changes of allowed items |
+| | `GroupItemStateChangedEvent(group, member)` | state changes of groups |
+| | all other event methods | `{ error: "Not available through the proxy." }` |
+| helpers | `iterSSELines`, `iterSSEEvents`, `parseSSEData` | identical to js-openhab-rest-client |
+
+Return values follow js-openhab-rest-client: JSON as objects, states as text, `{ message: "OK" }` for commands, and `{ error: "…" }` instead of exceptions:
+
+| Proxy answers | Result |
+|---|---|
+| 404 | `{ error: "Item not found." }` – also for items the proxy does not allow |
+| 403 | `{ error: "Command not allowed: outside 0..100." }` |
+| 429 | `{ error: "Too many commands." }` |
+| network | `{ error: "Request error: …" }` |
 
 ## Installation
 
-After publishing the package:
+Script tag, from jsDelivr or as a local copy:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/Michdo93/js-openhab-proxy-client@main/openhab-proxy.min.js"></script>
+```
+
+The classes are then global and under `window.openHAB` – the same name as js-openhab-rest-client, so load only one of the two.
+
+As an ES module (e.g. with Vite):
 
 ```bash
-npm install js-openhab-proxy-client
+npm install github:Michdo93/js-openhab-proxy-client
 ```
 
-For local development in a sibling project:
-
-```bash
-npm install ../js-openhab-proxy-client
+```js
+import { OpenHABClient, Items } from "js-openhab-proxy-client";
 ```
 
-Build the package:
+## Reconnecting
 
-```bash
-npm install
-npm run typecheck
-npm test
-npm run build
-```
+The proxy closes the event stream when openHAB or myopenHAB goes away, and Cloudflare may close it after an update. `iterSSEEvents` then simply ends. Open a new stream and read the states again, since changes may have been missed in between:
 
-## Basic usage
-
-```ts
-import { OpenHABProxyClient } from "js-openhab-proxy-client";
-
-const openhab = new OpenHABProxyClient({
-  baseUrl: "https://YOUR-WORKER.workers.dev"
-});
-
-const items = await openhab.getItems();
-console.log(items);
-
-const state = await openhab.getItemState("Demo_Light");
-console.log(state);
-
-await openhab.sendCommand("Demo_Light", "ON");
-```
-
-The client does not know which items or commands are allowed. The Worker remains the authority and rejects anything outside its allowlist.
-
-## Subscribe to events
-
-```ts
-const stop = openhab.subscribe({
-  onOpen() {
-    console.log("Connected to openHAB event stream");
-  },
-  onEvent(event) {
-    console.log("Item changed", event.data.topic, event.data.payload);
-  },
-  onError(error) {
-    console.error("Event stream error", error);
-  },
-  onResyncRequired() {
-    // Re-read the relevant states after a reconnect to avoid stale UI state.
-    return refreshDashboardState();
-  }
-});
-
-// Later, for example when the page/component is disposed:
-stop();
-```
-
-`subscribe()` reconnects by default. It returns a stop function. Pass `reconnect: false` to disable reconnects. The stream parser handles frames split across network chunks.
-
-## Cloudflare Access
-
-If the Worker is protected by Cloudflare Access, requests must arrive with a valid Access session. The client uses `credentials: "include"` so a browser can send an existing Access session cookie cross-origin; the Worker returns credentialed CORS headers only for explicitly configured origins. You must still validate the actual browser login/cookie flow for your chosen domain and browser privacy settings. Do not embed a long-lived service token or openHAB token in a public frontend bundle.
-
-The optional `headers` setting supports custom headers in controlled environments:
-
-```ts
-const client = new OpenHABProxyClient({
-  baseUrl: "https://proxy.example.com",
-  headers: () => ({
-    "X-Example-Header": getShortLivedApplicationHeader()
-  })
-});
-```
-
-Only use this for short-lived credentials issued by a trusted backend. A static secret shipped in frontend JavaScript is public.
-
-## Options
-
-| Option | Default | Description |
-|---|---:|---|
-| `baseUrl` | required | Worker base URL |
-| `headers` | — | Additional headers or async header factory |
-| `fetch` | global `fetch` | Custom fetch implementation |
-| `timeoutMs` | `15000` | Per-request timeout |
-| `maxReconnectAttempts` | `Infinity` | Maximum SSE reconnect attempts |
-| `reconnectDelayMs` | `1000` | Initial reconnect delay |
-| `maxReconnectDelayMs` | `30000` | Maximum reconnect delay |
-| `onReconnect` | — | Called after reconnection |
-| `onConnected` | — | Called on every successful connection |
-| `onResyncRequired` | — | Optional state refresh after reconnect |
-
-## API methods
-
-- `getItems(signal?)`
-- `getItem(name, signal?)`
-- `getItemState(name, signal?)`
-- `sendCommand(name, command, signal?)`
-- `subscribe({ onEvent, onError?, onOpen?, signal?, reconnect? })`
-
-All item names and command strings are URL/body encoded appropriately. The server-side allowlist is still mandatory.
-
-## Error handling
-
-HTTP errors throw `OpenHABProxyError`:
-
-```ts
-import { OpenHABProxyClient, OpenHABProxyError } from "js-openhab-proxy-client";
-
-try {
-  await openhab.sendCommand("Demo_Light", "ON");
-} catch (error) {
-  if (error instanceof OpenHABProxyError) {
-    console.error(error.status, error.code, error.responseBody);
-  } else {
-    throw error;
+```js
+async function watch(onEvent) {
+  while (true) {
+    const stream = await new ItemEvents(client).ItemStateChangedEvent();
+    if (!stream.error) {
+      await reloadStates();                          // what changed meanwhile
+      for await (const event of iterSSEEvents(stream)) onEvent(event);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   }
 }
 ```
 
-## Browser security
+The same loop works with js-openhab-rest-client.
 
-- The Worker URL is not a secret.
-- The openHAB API token must never be passed to this library.
-- Do not put a static proxy password or Cloudflare service token in a public GitHub Pages bundle.
-- Configure CORS on the Worker for the exact dashboard origin, but remember CORS is not authentication.
-- Protect real installations at the Worker/Cloudflare Access layer.
+## Security
 
-## Compatibility
+The proxy URL is not a secret, and nothing in this library is. Which items can be read and which commands are accepted is decided in the proxy alone – a modified copy of this file gains nothing. Never put an openHAB token or myopenHAB password into a public page.
 
-Targets modern browsers and Node.js 20+ runtimes with Fetch API, AbortController, Web Streams, and `AbortSignal.any`. If supporting older browsers, provide compatible platform polyfills at the application level.
+## Development
+
+```bash
+npm install
+npm test        # builds openhab-proxy.mjs and openhab-proxy.min.js, runs the tests
+```
+
+`openhab-proxy.js` is the source; `openhab-proxy.mjs` and `openhab-proxy.min.js` are generated from it.
+
+Tested in Chromium (Playwright) against the proxy in `wrangler dev` and openHAB 5.2.3: list, group, state, allowed and rejected commands, event stream with CORS from an allowed origin, and refusal for a foreign origin. The same test page ran unchanged with js-openhab-rest-client directly against openHAB.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT – see [LICENSE](LICENSE).
