@@ -109,6 +109,12 @@ npm test        # builds openhab-proxy.mjs and openhab-proxy.min.js, runs the te
 
 Tested in Chromium (Playwright) against the proxy in `wrangler dev` and openHAB 5.2.3: list, group, state, allowed and rejected commands, event stream with CORS from an allowed origin, and refusal for a foreign origin. The same test page ran unchanged with js-openhab-rest-client directly against openHAB.
 
+## Support
+
+If this project helps you, I appreciate a coffee:
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/Michdo93)
+
 ## License
 
 MIT – see [LICENSE](LICENSE).
